@@ -1,0 +1,66 @@
+URL: https://osschain-back-end-dot-arboreal-path-419419.wm.r.appspot.com/
+1)	calculate_chain_gas_price() -> POST  
+Body {
+	sender_address,
+	seceiver_address,
+	amount,
+	blockchain
+}
+2)	calculate_token_gas_price() -> POST  
+body {
+	sender_address,
+	receiver_address,
+	amount,
+	blockchain,
+	token_contract_address
+}
+3)	crypto_chain_transfer() -> POST
+body {
+	private_key,
+	receiver_address,
+	amount,
+	chain_id,
+	blockchain,
+	calculated_gas_fee
+}
+4)	crypto_token_transfer() -> POST
+body {
+	private_key,
+	receiver_address,
+	amount,
+	chain_id,
+	blockchain,
+	calculated_gas_fee,
+	token_contract_address
+}
+5)	get_ntf_metadata() - > POST 
+body {
+	id,
+	contract_address,
+	blockchain,
+	page_size,
+	token_id
+}
+6)	get_ntf_by_owner() - > POST 
+body {
+	id,
+	wallet_address,
+	blockchain,
+	page_size,
+	page_token,
+}
+7)	get_token_transfer() => POST
+body {
+	id,
+	wallet_address,
+	blockchain,
+	page_size,
+	page_token
+}
+8)	get_account_balance() -> POST
+body {
+	wallet_address,
+	blockchain,
+	page_size,
+	id
+}
