@@ -1,7 +1,9 @@
 from django.http import JsonResponse
 import json
 from web3 import Web3
+from django.core.cache import cache
 import time
+from osschain.client_rescrict import is_rate_limited, get_client_ip
 
 ERC20_ABI = [
     {
@@ -59,6 +61,12 @@ def fetch_native_currency(blockchain):
 
 def calculate_chain_gas_price(request):
     if request.method == 'POST':
+        user_ip = get_client_ip(request)
+        user_key = f"rate_limit_{user_ip}_calculate_chain_gas_price"
+
+        if is_rate_limited(user_key):
+            return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
+
         try:
             data = json.loads(request.body.decode('utf-8'))
             sender_address = data.get('sender_address')
@@ -101,9 +109,14 @@ def calculate_chain_gas_price(request):
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
     else:
         return JsonResponse({'success': False, 'error': 'Invalid request method'}, status=405)
-
+    
 def calculate_token_gas_price(request):
     if request.method == 'POST':
+        user_ip = get_client_ip(request)
+        user_key = f"rate_limit_{user_ip}_calculate_chain_gas_price"
+
+        if is_rate_limited(user_key):
+            return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
         try:
             data = json.loads(request.body.decode('utf-8'))
             sender_address = data.get('sender_address')
@@ -150,6 +163,11 @@ def calculate_token_gas_price(request):
 
 def crypto_chain_transfer(request):
     if request.method == 'POST':
+        user_ip = get_client_ip(request)
+        user_key = f"rate_limit_{user_ip}_calculate_chain_gas_price"
+
+        if is_rate_limited(user_key):
+            return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
         try:
             data = json.loads(request.body.decode('utf-8'))
             sender_address = data.get('sender_address')
@@ -197,6 +215,11 @@ def crypto_chain_transfer(request):
 
 def crypto_token_transfer(request):
     if request.method == 'POST':
+        user_ip = get_client_ip(request)
+        user_key = f"rate_limit_{user_ip}_calculate_chain_gas_price"
+
+        if is_rate_limited(user_key):
+            return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
         try:
             data = json.loads(request.body.decode('utf-8'))
             sender_address = data.get('sender_address')

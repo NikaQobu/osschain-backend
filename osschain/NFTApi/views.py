@@ -2,10 +2,16 @@ from django.http import JsonResponse
 import requests
 import json
 from osschain import env
+from osschain.client_rescrict import is_rate_limited, get_client_ip
 
 
 def get_nft_metadata(request):
     if request.method == 'POST':
+        user_ip = get_client_ip(request)
+        user_key = f"rate_limit_{user_ip}_calculate_chain_gas_price"
+        if is_rate_limited(user_key):
+            return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
+        
         response = json.loads(request.body.decode("utf-8"))
         id = response.get("id")
         contract_address = response.get("contract_address")
@@ -62,6 +68,11 @@ def get_nft_metadata(request):
 
 def get_nft_by_owner(request):
     if request.method == 'POST':
+        user_ip = get_client_ip(request)
+        user_key = f"rate_limit_{user_ip}_calculate_chain_gas_price"
+        if is_rate_limited(user_key):
+            return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
+        
         response = json.loads(request.body.decode("utf-8"))
         wallet_address = response.get("wallet_address")
         blockchain = response.get("blockchain")

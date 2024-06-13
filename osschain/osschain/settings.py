@@ -40,7 +40,7 @@ INSTALLED_APPS = [
     "NFTApi",
     "QueryApi",
     "TokenApi",
-    "CryptoTransferApp"
+    "CryptoTransferApp",
 ]
 
 MIDDLEWARE = [
