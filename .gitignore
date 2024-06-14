@@ -42,7 +42,6 @@ testem.log
 Thumbs.db
 /venv
 /requirements.txt
-/osschain.requirements.txt
-/osschain.osschain.env.py
+/osschain.osschain
 
 
