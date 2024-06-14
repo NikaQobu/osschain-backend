@@ -1,8 +1,7 @@
-from django.contrib import admin
 from django.urls import path
-from . import views
+from .views import generate_crypto_12_word, create_wallet_addresses
 
 urlpatterns = [
-     #path('get_account_balance', views.get_account_balance, name="get_account_balance"),
-     
+    path('generate-12-word/', generate_crypto_12_word, name='generate_crypto_12_word'),
+    path('create-wallet-address/', create_wallet_addresses, name='create_wallet_addresses'),
 ]
