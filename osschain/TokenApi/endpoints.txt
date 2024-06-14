@@ -64,3 +64,12 @@ body {
 	page_size,
 	id
 }
+
+9) generate_crypto_12_word() -> GET
+
+10) create_wallet_addresses() -> POST 
+	body{
+		mnemonic_phrase,
+		blockchain
+	}
+ 

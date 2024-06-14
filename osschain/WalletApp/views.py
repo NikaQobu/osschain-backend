@@ -32,7 +32,7 @@ def create_wallet_addresses(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body.decode('utf-8'))
-            mnemonic_phrase = data.get('mnemonic')
+            mnemonic_phrase = data.get('mnemonic_phrase')
             blockchain = data.get('blockchain').lower()
 
             if not mnemonic_phrase:
