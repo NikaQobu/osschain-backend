@@ -90,7 +90,7 @@ def get_transactions_by_address(request):
                 }
             }
 
-            response = requests.post(env.url, data=json.dumps(payload), headers=env.request_header)
+            response = requests.post(env.api_url, data=json.dumps(payload), headers=env.api_request_header)
             response.raise_for_status()  # Raise an HTTPError for bad responses
             
             # Check the API response JSON for specific data or conditions

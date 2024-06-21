@@ -5,6 +5,8 @@ from django.core.cache import cache
 import time
 import logging
 from osschain.client_rescrict import is_rate_limited, get_client_ip
+from osschain import env
+
 
 ERC20_ABI = [
     {
@@ -32,6 +34,14 @@ ERC20_ABI = [
         "type": "function"
     }
 ]
+ERC721_ABI = [
+    "function name() view returns (string)",
+    "function symbol() view returns (string)",
+    "function tokenURI(uint256 tokenId) view returns (string)",
+    "function ownerOf(uint256 tokenId) view returns (address)",
+    "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
+]
+
 def retry_on_specific_error(func, retries=5, delay=1, specific_error_message=None):
     if specific_error_message is None:
         specific_error_message = "{'code': -32602, 'message': 'too many arguments, want at most 1'}"
@@ -82,7 +92,7 @@ def calculate_chain_gas_price(request):
             receiver_address = Web3.to_checksum_address(receiver_address)
 
             # Connect to the blockchain
-            rpc_url = f'https://rpc.ankr.com/{blockchain}/f7c0df84b43c7f9f2c529c76efc01da4b30271a66608da4728f9830ea17d29bc'
+            rpc_url = env.change_chain_in_api_url(blockchain)
             web3 = Web3(Web3.HTTPProvider(rpc_url))
 
             if not web3.is_connected():
@@ -153,7 +163,7 @@ def calculate_token_gas_price(request):
             token_contract_address = Web3.to_checksum_address(token_contract_address)
 
             # Connect to the blockchain
-            rpc_url = f'https://rpc.ankr.com/{blockchain}/f7c0df84b43c7f9f2c529c76efc01da4b30271a66608da4728f9830ea17d29bc'
+            rpc_url = env.change_chain_in_api_url(blockchain)
             web3 = Web3(Web3.HTTPProvider(rpc_url))
 
             if not web3.is_connected():
@@ -202,6 +212,151 @@ def calculate_token_gas_price(request):
     else:
         return JsonResponse({'success': False, 'error': 'Invalid request method'}, status=405)
 
+def calculate_nft_fee(request):
+    if request.method == 'POST':
+        user_ip = get_client_ip(request)
+        user_key = f"rate_limit_{user_ip}_calculate_nft_fee"
+
+        if is_rate_limited(user_key):
+            return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
+
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+            sender_address = data.get('sender_address')
+            receiver_address = data.get('receiver_address')
+            nft_token_id = data.get('nft_token_id')
+            blockchain = data.get('blockchain')
+            nft_contract_address = data.get('nft_contract_address')
+
+            if not all([sender_address, receiver_address, nft_token_id, blockchain, nft_contract_address]):
+                return JsonResponse({'success': False, 'error': 'Missing required fields'}, status=400)
+
+            # Convert addresses to checksum format
+            sender_address = Web3.to_checksum_address(sender_address)
+            receiver_address = Web3.to_checksum_address(receiver_address)
+            nft_contract_address = Web3.to_checksum_address(nft_contract_address)
+
+            # Connect to the blockchain
+            rpc_url = env.change_chain_in_api_url(blockchain)
+            web3 = Web3(Web3.HTTPProvider(rpc_url))
+
+            if not web3.is_connected():
+                return JsonResponse({'success': False, 'error': 'Failed to connect to blockchain node'}, status=500)
+
+            def build_and_estimate_gas():
+                nft_contract = web3.eth.contract(address=nft_contract_address, abi=ERC721_ABI)
+
+                tx_data = nft_contract.functions.transferFrom(
+                    sender_address,
+                    receiver_address,
+                    nft_token_id
+                ).build_transaction({
+                    'from': sender_address,
+                    'gas': 0,
+                    'gasPrice': 0
+                })
+
+                # Estimate gas and calculate fees
+                gas_estimate = web3.eth.estimate_gas(tx_data)
+                gas_price = web3.eth.gas_price
+                gas_fee_wei = gas_estimate * gas_price
+                gas_fee_native = web3.from_wei(gas_fee_wei, 'ether')
+                native_currency = fetch_native_currency(blockchain)
+
+                return {
+                    'gas_fee_wei': gas_fee_wei,
+                    'gas_fee_native': float(gas_fee_native),
+                    'native_currency': native_currency
+                }
+
+            result = retry_on_specific_error(build_and_estimate_gas)
+            return JsonResponse({'success': True, **result})
+
+        except Exception as e:
+            logging.error(f"Error in calculate_nft_fee: {str(e)}")
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+    else:
+        return JsonResponse({'success': False, 'error': 'Invalid request method'}, status=405)
+
+def nft_transfer(request):
+    if request.method == 'POST':
+        user_ip = get_client_ip(request)
+        user_key = f"rate_limit_{user_ip}_nft_transfer"
+
+        if is_rate_limited(user_key):
+            return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
+
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+            sender_address = data.get('sender_address')
+            private_key = data.get('private_key')
+            receiver_address = data.get('receiver_address')
+            nft_token_id = data.get('nft_token_id')
+            blockchain = data.get('blockchain')
+            nft_contract_address = data.get('nft_contract_address')
+            calculated_gas_fee = data.get('calculated_gas_fee')
+
+            if not all([sender_address, private_key, receiver_address, nft_token_id, blockchain, nft_contract_address, calculated_gas_fee]):
+                return JsonResponse({'success': False, 'error': 'Missing required fields'}, status=400)
+
+            # Validate addresses
+            if sender_address.lower() == '0x0000000000000000000000000000000000000000' or receiver_address.lower() == '0x0000000000000000000000000000000000000000':
+                return JsonResponse({'success': False, 'error': 'Invalid sender or receiver address'}, status=400)
+
+            sender_address = Web3.to_checksum_address(sender_address)
+            receiver_address = Web3.to_checksum_address(receiver_address)
+            nft_contract_address = Web3.to_checksum_address(nft_contract_address)
+
+            rpc_url = env.change_chain_in_api_url(blockchain)
+            web3 = Web3(Web3.HTTPProvider(rpc_url))
+
+            if web3.is_connected():
+                nonce = web3.eth.get_transaction_count(sender_address)
+                nft_contract = web3.eth.contract(address=nft_contract_address, abi=ERC721_ABI)
+
+                def build_and_send_transaction():
+                    tx = nft_contract.functions.transferFrom(
+                        sender_address,
+                        receiver_address,
+                        nft_token_id
+                    ).build_transaction({
+                        'chainId': int(blockchain),
+                        'gas': 200000,  # Provide a reasonable gas limit
+                        'gasPrice': web3.eth.gas_price,
+                        'nonce': nonce,
+                        'from': sender_address
+                    })
+
+                    gas_estimate = web3.eth.estimate_gas(tx)
+                    gas_price = web3.eth.gas_price
+                    gas_fee_wei = gas_estimate * gas_price
+
+                    # Allow a 5% tolerance in gas fee
+                    tolerance = 0.05
+                    min_acceptable_fee = calculated_gas_fee * (1 - tolerance)
+                    max_acceptable_fee = calculated_gas_fee * (1 + tolerance)
+
+                    if min_acceptable_fee <= gas_fee_wei <= max_acceptable_fee:
+                        signed_tx = web3.eth.account.sign_transaction(tx, private_key)
+                        tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+                        return web3.to_hex(tx_hash)
+                    else:
+                        raise Exception(f"Gas fee out of acceptable range. Required: {calculated_gas_fee}, Actual: {gas_fee_wei}")
+
+                # Retry on error
+                tx_hash_hex = retry_on_specific_error(build_and_send_transaction)
+                
+                return JsonResponse({'success': True, 'tx_hash': tx_hash_hex})
+            else:
+                return JsonResponse({'success': False, 'error': 'Failed to connect to blockchain node'}, status=500)
+
+        except Exception as e:
+            logging.error(f"Error in nft_transfer: {str(e)}")
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+    else:
+        return JsonResponse({'success': False, 'error': 'Invalid request method'}, status=405)
+
+
 def crypto_chain_transfer(request):
     if request.method == 'POST':
         user_ip = get_client_ip(request)
@@ -231,7 +386,7 @@ def crypto_chain_transfer(request):
             sender_address = Web3.to_checksum_address(sender_address)
             receiver_address = Web3.to_checksum_address(receiver_address)
 
-            rpc_url = f'https://rpc.ankr.com/{blockchain}/f7c0df84b43c7f9f2c529c76efc01da4b30271a66608da4728f9830ea17d29bc'
+            rpc_url = env.change_chain_in_api_url(blockchain)
             web3 = Web3(Web3.HTTPProvider(rpc_url))
 
             if web3.is_connected():
@@ -308,7 +463,7 @@ def crypto_token_transfer(request):
             receiver_address = Web3.to_checksum_address(receiver_address)
             token_contract_address = Web3.to_checksum_address(token_contract_address)
 
-            rpc_url = f'https://rpc.ankr.com/{blockchain}/f7c0df84b43c7f9f2c529c76efc01da4b30271a66608da4728f9830ea17d29bc'
+            rpc_url = env.change_chain_in_api_url(blockchain)
             web3 = Web3(Web3.HTTPProvider(rpc_url))
 
             if web3.is_connected():
