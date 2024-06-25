@@ -1,62 +1,55 @@
 from django.http import JsonResponse
-import requests
 import json
-from osschain import env
+from web3 import Web3
+from django.core.cache import cache
+import logging
+import requests
 from osschain.client_rescrict import is_rate_limited, get_client_ip
+from osschain import env
 
+# Updated get_account_balance function
 def get_account_balance(request):
     if request.method == 'POST':
         user_ip = get_client_ip(request)
-        user_key = f"rate_limit_{user_ip}_calculate_chain_gas_price"
+        user_key = f"rate_limit_{user_ip}_get_account_balance"
         if is_rate_limited(user_key):
             return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
         
-        response = json.loads(request.body.decode("utf-8"))
-        wallet_address = response.get("wallet_address")
-        blockchain = response.get("blockchain")
-        page_size = response.get("page_size")
-        id = response.get("id")
         try:
-            payload = {
-                "id": id,
-                "jsonrpc": "2.0",
-                "method": "ankr_getAccountBalance",
-                "pageSize": page_size,
-                "params": {
-                    "blockchain": blockchain,  # Add the relevant blockchain names, e.g., ["ethereum", "bsc"]
-                    "walletAddress": wallet_address
-                }
-            }
+            data = json.loads(request.body.decode("utf-8"))
+            wallet_address = data.get("wallet_address")
+            blockchain = data.get("blockchain")
 
-            response = requests.post(env.api_url, data=json.dumps(payload), headers=env.api_request_header)
-            response.raise_for_status()  # Raise an HTTPError for bad responses
-            
-            # Check the API response JSON for specific data or conditions
-            ans = response.json()
-            if ans.get('success', True):
-                data = {
-                    "success": True,
-                    "message": "Request completed successfully",
-                    "ans": ans,
-                    "status": 200
-                }
-            else:
-                data = {
-                    "success": False,
-                    "message": "Answer does not exist",
-                    "status": 404  # Example status code for resource not found
-                }
+            if not all([wallet_address, blockchain]):
+                return JsonResponse({'success': False, 'error': 'Missing required fields'}, status=400)
 
-            return JsonResponse(data, status=data.get("status"), json_dumps_params={'ensure_ascii': False})
+            # Convert address to checksum format
+            wallet_address = Web3.to_checksum_address(wallet_address)
 
-        except requests.exceptions.RequestException as e:
-            # Catch any request-related exceptions
-            return JsonResponse({'error': str(e)}, status=500)
-        except json.JSONDecodeError as e:
-            # Catch any JSON decoding errors
-            return JsonResponse({'error': 'Failed to parse response'}, status=500)
+            # Define RPC URLs for supported blockchains
+            rpc_url = env.get_blockchain_rpc_node(blockchain)
+            if not rpc_url:
+                return JsonResponse({'success': False, 'error': 'Unsupported blockchain'}, status=400)
+
+            # Connect to the blockchain using the appropriate RPC URL
+            web3 = Web3(Web3.HTTPProvider(rpc_url))
+
+            if not web3.is_connected():
+                return JsonResponse({'success': False, 'error': 'Failed to connect to blockchain node'}, status=500)
+
+            # Fetch balance
+            balance_wei = web3.eth.get_balance(wallet_address)
+            balance_eth = web3.from_wei(balance_wei, 'ether')
+
+            return JsonResponse({
+                'success': True,
+                'message': 'Request completed successfully',
+                'balance': str(balance_eth),
+                'status': 200
+            })
+
         except Exception as e:
-            # Catch any other exceptions
+            logging.error(f"Error in get_account_balance: {str(e)}")
             return JsonResponse({'error': 'An unexpected error occurred: ' + str(e)}, status=500)
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
