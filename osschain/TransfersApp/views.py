@@ -8,65 +8,8 @@ from osschain.client_rescrict import is_rate_limited, get_client_ip
 from osschain import env
 
 
-ERC20_ABI = [
-    {
-        "constant": False,
-        "inputs": [
-            {"name": "_to", "type": "address"},
-            {"name": "_value", "type": "uint256"}
-        ],
-        "name": "transfer",
-        "outputs": [{"name": "", "type": "bool"}],
-        "type": "function"
-    },
-    {
-        "constant": True,
-        "inputs": [{"name": "_owner", "type": "address"}],
-        "name": "balanceOf",
-        "outputs": [{"name": "balance", "type": "uint256"}],
-        "type": "function"
-    },
-    {
-        "constant": True,
-        "inputs": [],
-        "name": "decimals",
-        "outputs": [{"name": "", "type": "uint8"}],
-        "type": "function"
-    }
-]
-ERC721_ABI = [
-    {
-        "constant": False,
-        "inputs": [
-            {"name": "from", "type": "address"},
-            {"name": "to", "type": "address"},
-            {"name": "tokenId", "type": "uint256"}
-        ],
-        "name": "transferFrom",
-        "outputs": [],
-        "payable": False,
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "constant": True,
-        "inputs": [{"name": "tokenId", "type": "uint256"}],
-        "name": "ownerOf",
-        "outputs": [{"name": "", "type": "address"}],
-        "payable": False,
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "constant": True,
-        "inputs": [{"name": "tokenId", "type": "uint256"}],
-        "name": "getApproved",
-        "outputs": [{"name": "", "type": "address"}],
-        "payable": False,
-        "stateMutability": "view",
-        "type": "function"
-    }
-]
+
+
 
 def retry_on_specific_error(func, retries=5, delay=1, specific_error_message=None):
     if specific_error_message is None:
@@ -196,7 +139,7 @@ def calculate_token_gas_price(request):
                 return JsonResponse({'success': False, 'error': 'Failed to connect to blockchain node'}, status=500)
 
             def build_and_estimate_gas():
-                token_contract = web3.eth.contract(address=token_contract_address, abi=ERC20_ABI)
+                token_contract = web3.eth.contract(address=token_contract_address, abi=env.ERC20_ABI)
                 
                 # Fetch token decimals and convert the amount
                 decimals = token_contract.functions.decimals().call()
@@ -275,7 +218,7 @@ def calculate_nft_fee(request):
             if not web3.is_connected():
                 return JsonResponse({'success': False, 'error': 'Failed to connect to blockchain node'}, status=500)
 
-            nft_contract = web3.eth.contract(address=nft_contract_address, abi=ERC721_ABI)
+            nft_contract = web3.eth.contract(address=nft_contract_address, abi=env.ERC721_ABI)
 
             def build_and_estimate_gas():
                 try:
@@ -365,7 +308,7 @@ def nft_transfer(request):
 
             if web3.is_connected():
                 nonce = web3.eth.get_transaction_count(sender_address)
-                nft_contract = web3.eth.contract(address=nft_contract_address, abi=ERC721_ABI)
+                nft_contract = web3.eth.contract(address=nft_contract_address, abi=env.ERC721_ABI)
 
                 def build_and_send_transaction():
                     try:
@@ -528,7 +471,7 @@ def crypto_token_transfer(request):
 
             if web3.is_connected():
                 nonce = web3.eth.get_transaction_count(sender_address)
-                token_contract = web3.eth.contract(address=token_contract_address, abi=ERC20_ABI)
+                token_contract = web3.eth.contract(address=token_contract_address, abi=env.ERC20_ABI)
 
                 def build_and_send_transaction():
                     # Fetch token decimals and convert amount
