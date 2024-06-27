@@ -6,6 +6,7 @@ import time
 import logging
 from osschain.client_rescrict import is_rate_limited, get_client_ip
 from osschain import env
+from web3.middleware import geth_poa_middleware
 
 
 
@@ -196,6 +197,7 @@ def calculate_nft_fee(request):
             nft_token_id = data.get('nft_token_id')
             blockchain = data.get('blockchain')
             nft_contract_address = data.get('nft_contract_address')
+            token_standard = data.get('token_standard')
 
             if not all([sender_address, receiver_address, nft_token_id, blockchain, nft_contract_address]):
                 return JsonResponse({'success': False, 'error': 'Missing required fields'}, status=400)
@@ -212,22 +214,43 @@ def calculate_nft_fee(request):
                 return JsonResponse({'success': False, 'error': 'Invalid NFT token ID'}, status=400)
 
             # Connect to the blockchain
-            rpc_url = env.get_blockchain_rpc_node(blockchain) # Replace with your actual RPC URL
+            rpc_url = env.get_blockchain_rpc_node(blockchain)  # Replace with your actual RPC URL
             web3 = Web3(Web3.HTTPProvider(rpc_url))
+
+            # Add the POA middleware for compatibility with networks like Polygon
+            web3.middleware_onion.inject(geth_poa_middleware, layer=0)
 
             if not web3.is_connected():
                 return JsonResponse({'success': False, 'error': 'Failed to connect to blockchain node'}, status=500)
+            
+            if token_standard == "ERC721":
+                abi = env.ERC721_ABI
+                transfer_function = 'transferFrom'
+            elif token_standard == "ERC1155":
+                abi = env.ERC1155_ABI
+                transfer_function = 'safeTransferFrom'
+            else:
+                return JsonResponse({'success': False, 'error': 'Unsupported token standard'}, status=400)
 
-            nft_contract = web3.eth.contract(address=nft_contract_address, abi=env.ERC721_ABI)
+            if abi:
+                nft_contract = web3.eth.contract(address=nft_contract_address, abi=abi)
+            else:
+                return JsonResponse({'success': False, 'error': 'ABI not found'}, status=400)
 
             def build_and_estimate_gas():
                 try:
-                    # Encode the function call
-                    tx_data = nft_contract.functions.transferFrom(
-                        sender_address, receiver_address, nft_token_id
-                    ).build_transaction({
-                        'from': sender_address
-                    })['data']
+                    if token_standard == "ERC721":
+                        tx_data = nft_contract.functions.transferFrom(
+                            sender_address, receiver_address, nft_token_id
+                        ).build_transaction({
+                            'from': sender_address
+                        })['data']
+                    elif token_standard == "ERC1155":
+                        tx_data = nft_contract.functions.safeTransferFrom(
+                            sender_address, receiver_address, nft_token_id, 1, b''
+                        ).build_transaction({
+                            'from': sender_address
+                        })['data']
 
                     # Estimate gas
                     gas_estimate = web3.eth.estimate_gas({
@@ -243,16 +266,19 @@ def calculate_nft_fee(request):
 
                     # Calculate the total fee
                     total_fee = gas_estimate * gas_price
-                    total_fee_eth = web3.from_wei(total_fee, 'ether')
+                    total_fee_native = web3.from_wei(total_fee, 'ether')
 
                     logging.info(f"Total Fee (in Wei): {total_fee}")
-                    logging.info(f"Total Fee (in Ether): {total_fee_eth}")
+                    logging.info(f"Total Fee (in Native Currency): {total_fee_native}")
+
+                    native_currency = fetch_native_currency(blockchain)
 
                     return {
                         'gas_estimate': gas_estimate,
                         'gas_price': gas_price,
                         'total_fee_wei': total_fee,
-                        'total_fee_eth': float(total_fee_eth)
+                        'total_fee_native': float(total_fee_native),
+                        'native_currency': native_currency
                     }
                 except Exception as e:
                     logging.error(f"Gas estimation failed: {str(e)}")
@@ -274,7 +300,6 @@ def nft_transfer(request):
 
         if is_rate_limited(user_key):
             return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
-
         try:
             data = json.loads(request.body.decode('utf-8'))
             sender_address = data.get('sender_address')
@@ -283,10 +308,12 @@ def nft_transfer(request):
             nft_token_id = data.get('nft_token_id')
             blockchain = data.get('blockchain')
             nft_contract_address = data.get('nft_contract_address')
+            token_standard = data.get("token_standard")
             calculated_gas_fee = data.get('calculated_gas_fee')
-            chain_id = data.get("chain_id")
+            
 
-            if not all([sender_address, private_key, receiver_address, nft_token_id, blockchain, nft_contract_address, calculated_gas_fee]):
+
+            if not all([sender_address, private_key, receiver_address, nft_token_id, blockchain, nft_contract_address, token_standard, calculated_gas_fee]):
                 return JsonResponse({'success': False, 'error': 'Missing required fields'}, status=400)
 
             # Validate addresses
@@ -306,24 +333,51 @@ def nft_transfer(request):
             rpc_url = env.get_blockchain_rpc_node(blockchain)  # Replace with your actual RPC URL
             web3 = Web3(Web3.HTTPProvider(rpc_url))
 
+            # Add the POA middleware for compatibility with networks like Polygon
+            web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+
             if web3.is_connected():
                 nonce = web3.eth.get_transaction_count(sender_address)
-                nft_contract = web3.eth.contract(address=nft_contract_address, abi=env.ERC721_ABI)
+
+                if token_standard == "ERC721":
+                    abi = env.ERC721_ABI
+                    transfer_function = 'transferFrom'
+                elif token_standard == "ERC1155":
+                    abi = env.ERC1155_ABI
+                    transfer_function = 'safeTransferFrom'
+                else:
+                    return JsonResponse({'success': False, 'error': 'Unsupported token standard'}, status=400)
+
+                nft_contract = web3.eth.contract(address=nft_contract_address, abi=abi)
 
                 def build_and_send_transaction():
                     try:
-                        # Build the transaction
-                        tx = nft_contract.functions.transferFrom(
-                            sender_address,
-                            receiver_address,
-                            nft_token_id
-                        ).build_transaction({
-                            'chainId': int(chain_id),
-                            'gas': 200000,  # Provide a reasonable gas limit
-                            'gasPrice': web3.eth.gas_price,
-                            'nonce': nonce,
-                            'from': sender_address
-                        })
+                        if token_standard == "ERC721":
+                            tx = nft_contract.functions.transferFrom(
+                                sender_address,
+                                receiver_address,
+                                nft_token_id
+                            ).build_transaction({
+                                'blockchain': blockchain,
+                                'gas': 200000,  # Provide a reasonable gas limit
+                                'gasPrice': web3.eth.gas_price,
+                                'nonce': nonce,
+                                'from': sender_address
+                            })
+                        elif token_standard == "ERC1155":
+                            tx = nft_contract.functions.safeTransferFrom(
+                                sender_address,
+                                receiver_address,
+                                nft_token_id,
+                                1,  # Amount of tokens to transfer
+                                b''  # Additional data (optional)
+                            ).build_transaction({
+                                'blockchain': blockchain,
+                                'gas': 200000,  # Provide a reasonable gas limit
+                                'gasPrice': web3.eth.gas_price,
+                                'nonce': nonce,
+                                'from': sender_address
+                            })
 
                         # Estimate gas
                         gas_estimate = web3.eth.estimate_gas(tx)
