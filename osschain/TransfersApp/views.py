@@ -300,6 +300,7 @@ def nft_transfer(request):
 
         if is_rate_limited(user_key):
             return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
+
         try:
             data = json.loads(request.body.decode('utf-8'))
             sender_address = data.get('sender_address')
@@ -310,8 +311,8 @@ def nft_transfer(request):
             nft_contract_address = data.get('nft_contract_address')
             token_standard = data.get("token_standard")
             calculated_gas_fee = data.get('calculated_gas_fee')
-            
 
+            logging.debug(f"Received data: {data}")
 
             if not all([sender_address, private_key, receiver_address, nft_token_id, blockchain, nft_contract_address, token_standard, calculated_gas_fee]):
                 return JsonResponse({'success': False, 'error': 'Missing required fields'}, status=400)
@@ -324,11 +325,13 @@ def nft_transfer(request):
             receiver_address = Web3.to_checksum_address(receiver_address)
             nft_contract_address = Web3.to_checksum_address(nft_contract_address)
 
-            # Convert nft_token_id to integer
+            # Convert nft_token_id and calculated_gas_fee to integer
             try:
                 nft_token_id = int(nft_token_id)
-            except ValueError:
-                return JsonResponse({'success': False, 'error': 'Invalid NFT token ID'}, status=400)
+                calculated_gas_fee = int(calculated_gas_fee)
+            except ValueError as e:
+                logging.error(f"Error converting to int: {e}")
+                return JsonResponse({'success': False, 'error': 'Invalid NFT token ID or calculated gas fee'}, status=400)
 
             rpc_url = env.get_blockchain_rpc_node(blockchain)  # Replace with your actual RPC URL
             web3 = Web3(Web3.HTTPProvider(rpc_url))
@@ -338,6 +341,14 @@ def nft_transfer(request):
 
             if web3.is_connected():
                 nonce = web3.eth.get_transaction_count(sender_address)
+                logging.debug(f"Nonce for transaction: {nonce}")
+
+                # Ensure the sender has enough balance
+                balance = web3.eth.get_balance(sender_address)
+                logging.debug(f"Sender balance: {web3.from_wei(balance, 'ether')} {fetch_native_currency(blockchain)}")
+
+                if balance < calculated_gas_fee:
+                    return JsonResponse({'success': False, 'error': 'Insufficient funds for transfer'}, status=400)
 
                 if token_standard == "ERC721":
                     abi = env.ERC721_ABI
@@ -358,7 +369,6 @@ def nft_transfer(request):
                                 receiver_address,
                                 nft_token_id
                             ).build_transaction({
-                                'blockchain': blockchain,
                                 'gas': 200000,  # Provide a reasonable gas limit
                                 'gasPrice': web3.eth.gas_price,
                                 'nonce': nonce,
@@ -372,7 +382,6 @@ def nft_transfer(request):
                                 1,  # Amount of tokens to transfer
                                 b''  # Additional data (optional)
                             ).build_transaction({
-                                'blockchain': blockchain,
                                 'gas': 200000,  # Provide a reasonable gas limit
                                 'gasPrice': web3.eth.gas_price,
                                 'nonce': nonce,
@@ -386,8 +395,8 @@ def nft_transfer(request):
 
                         # Allow a 5% tolerance in gas fee
                         tolerance = 0.05
-                        min_acceptable_fee = calculated_gas_fee * (1 - tolerance)
-                        max_acceptable_fee = calculated_gas_fee * (1 + tolerance)
+                        min_acceptable_fee = int(calculated_gas_fee * (1 - tolerance))
+                        max_acceptable_fee = int(calculated_gas_fee * (1 + tolerance))
 
                         if min_acceptable_fee <= gas_fee_wei <= max_acceptable_fee:
                             # Sign the transaction
