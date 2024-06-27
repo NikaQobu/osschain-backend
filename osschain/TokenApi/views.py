@@ -2,6 +2,7 @@ from django.http import JsonResponse
 import json
 from web3 import Web3
 import logging
+import requests  # Import the requests library
 from osschain.client_rescrict import is_rate_limited, get_client_ip
 from osschain import env
 
@@ -9,6 +10,32 @@ def get_erc20_balance(web3, wallet_address, token_address):
     contract = web3.eth.contract(address=token_address, abi=env.ERC20_ABI)
     balance = contract.functions.balanceOf(wallet_address).call()
     return web3.from_wei(balance, 'ether')
+
+def get_crypto_price(token_symbol):
+    try:
+        response = requests.get('https://assets.osschain.com/market-data')
+        response.raise_for_status()
+        prices = response.json()
+        
+        # Log the response to debug the structure
+        logging.debug(f"Prices response: {prices}")
+
+        token_symbol = token_symbol.lower()  # Convert input token symbol to lowercase
+
+        if isinstance(prices, list):
+            for token in prices:
+                if token.get('symbol').lower() == token_symbol:
+                    return token.get('price')
+        elif isinstance(prices, dict) and 'data' in prices:
+            for token in prices.get('data', []):
+                if token.get('symbol').lower() == token_symbol:
+                    return token.get('price')
+
+    except requests.RequestException as e:
+        logging.error(f"Error fetching crypto prices: {str(e)}")
+        return 0  # Return 0 if there is an error fetching prices
+
+    return 0  # Return 0 if the token is not found
 
 def get_account_balance(request):
     if request.method == 'POST':
@@ -21,6 +48,10 @@ def get_account_balance(request):
             wallet_address = data.get("wallet_address")
             blockchain = data.get("blockchain")
             token_contract_address = data.get("token_contract_address", None)
+            token_symbol = data.get("token_symbol")
+            
+           
+            
 
             if not all([wallet_address, blockchain]):
                 return JsonResponse({'success': False, 'error': 'Missing required fields'}, status=400)
@@ -49,6 +80,7 @@ def get_account_balance(request):
                         'success': True,
                         'message': 'Request completed successfully',
                         'token_balance': str(token_balance),
+                        "native_price": get_crypto_price(token_symbol),
                         'status': 200
                     })
                 except Exception as token_error:
@@ -62,6 +94,7 @@ def get_account_balance(request):
                     'success': True,
                     'message': 'Request completed successfully',
                     'balance_native': str(balance_native),
+                    "native_price": get_crypto_price(token_symbol),
                     'status': 200
                 })
 
