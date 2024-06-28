@@ -1,16 +1,14 @@
-from django.http import JsonResponse
 import requests
 import json
 from osschain import env
-import logging
-from web3 import Web3
-from web3.middleware import geth_poa_middleware
+from django.http import JsonResponse, HttpResponse
 from osschain.client_rescrict import is_rate_limited, get_client_ip
+
 
 def get_token_transfer(request):
     if request.method == 'POST':
         user_ip = get_client_ip(request)
-        user_key = f"rate_limit_{user_ip}_get_token_transfer"
+        user_key = f"rate_limit_{user_ip}_calculate_chain_gas_price"
         if is_rate_limited(user_key):
             return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
         
@@ -20,27 +18,25 @@ def get_token_transfer(request):
         page_size = response.get("page_size")
         id = response.get("id")
         page_token = response.get("page_token")
-
         try:
-            if blockchain == "ethereum":
-                api_url = f"https://api.tatum.io/v3/ethereum/account/transaction/{wallet_address}"
-            elif blockchain == "bsc":
-                api_url = f"https://api.tatum.io/v3/bsc/account/transaction/{wallet_address}"
-            elif blockchain == "polygon":
-                api_url = f"https://api.tatum.io/v3/polygon/account/transaction/{wallet_address}"
-            else:
-                return JsonResponse({'success': False, 'error': 'Unsupported blockchain'}, status=400)
-            
-            params = {
+            payload = {
+                "id": id,
+                "jsonrpc": "2.0",
+                "method": "ankr_getTokenTransfers",
                 "pageSize": page_size,
-                "offset": page_token if page_token else 0
+                "params": {
+                    "blockchain": blockchain,  # Add the relevant blockchain names, e.g., ["ethereum", "bsc"]
+                    "address": wallet_address,
+                    "pageToken": page_token
+                }
             }
 
-            response = requests.get(api_url, headers=env.api_tatum_header, params=params)
-            response.raise_for_status()
+            response = requests.post(env.ankr_url, data=json.dumps(payload), headers=env.ankr_request_header)
+            response.raise_for_status()  # Raise an HTTPError for bad responses
             
+            # Check the API response JSON for specific data or conditions
             ans = response.json()
-            if ans:
+            if ans.get('success', True):
                 data = {
                     "success": True,
                     "message": "Request completed successfully",
@@ -51,143 +47,79 @@ def get_token_transfer(request):
                 data = {
                     "success": False,
                     "message": "Answer does not exist",
-                    "status": 404
+                    "status": 404  # Example status code for resource not found
                 }
 
             return JsonResponse(data, status=data.get("status"), json_dumps_params={'ensure_ascii': False})
 
         except requests.exceptions.RequestException as e:
+            # Catch any request-related exceptions
             return JsonResponse({'error': str(e)}, status=500)
         except json.JSONDecodeError as e:
+            # Catch any JSON decoding errors
             return JsonResponse({'error': 'Failed to parse response'}, status=500)
         except Exception as e:
+            # Catch any other exceptions
             return JsonResponse({'error': 'An unexpected error occurred: ' + str(e)}, status=500)
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
 
-
-
 def get_transaction_by_address(request):
     if request.method == 'POST':
         user_ip = get_client_ip(request)
-        user_key = f"rate_limit_{user_ip}_get_transaction_by_address"
+        user_key = f"rate_limit_{user_ip}_calculate_chain_gas_price"
         if is_rate_limited(user_key):
             return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
-
+        
         response = json.loads(request.body.decode("utf-8"))
         wallet_address = response.get("wallet_address")
         blockchain = response.get("blockchain")
-        page_size = response.get("page_size", 10)
+        page_size = response.get("page_size")
+        id = response.get("id")
         page_token = response.get("page_token")
-
-        if not wallet_address:
-            return JsonResponse({'success': False, 'error': 'wallet_address must be provided'}, status=400)
-
-        if blockchain not in ["ethereum", "bsc", "polygon"]:
-            return JsonResponse({'success': False, 'error': 'Unsupported blockchain'}, status=400)
-
         try:
-            if blockchain == "ethereum":
-                api_url = f"https://api.tatum.io/v3/ethereum/account/transaction/{wallet_address}"
-            elif blockchain == "bsc":
-                api_url = f"https://api.tatum.io/v3/bsc/account/transaction/{wallet_address}"
-            elif blockchain == "polygon":
-                api_url = f"https://api.tatum.io/v3/polygon/account/transaction/{wallet_address}"
-
-            params = {
+            payload = {
+                "id": id,
+                "jsonrpc": "2.0",
+                "method": "ankr_getTransactionsByAddress",
                 "pageSize": page_size,
+                "params": {
+                    "blockchain": blockchain,  # Add the relevant blockchain names, e.g., ["ethereum", "bsc"]
+                    "address": wallet_address,
+                    "pageToken": page_token
+                }
             }
-            if page_token:
-                params["offset"] = page_token
-
-            response = requests.get(api_url, headers=env.api_tatum_header, params=params)
-            response.raise_for_status()
+            
+            
+            response = requests.post(env.ankr_url, data=json.dumps(payload), headers=env.ankr_request_header)
+            response.raise_for_status()  # Raise an HTTPError for bad responses
+            
+            # Check the API response JSON for specific data or conditions
             ans = response.json()
+            if ans.get('success', True):
+                data = {
+                    "success": True,
+                    "message": "Request completed successfully",
+                    "ans": ans,
+                    "status": 200
+                }
+            else:
+                data = {
+                    "success": False,
+                    "message": "Answer does not exist",
+                    "status": 404  # Example status code for resource not found
+                }
 
-            data = {
-                "success": True,
-                "wallet_address": wallet_address,
-                "transactions": ans
-            }
-
-            return JsonResponse(data, json_dumps_params={'ensure_ascii': False})
+            return JsonResponse(data, status=data.get("status"), json_dumps_params={'ensure_ascii': False})
 
         except requests.exceptions.RequestException as e:
-            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+            # Catch any request-related exceptions
+            return JsonResponse({'error': str(e)}, status=500)
         except json.JSONDecodeError as e:
-            return JsonResponse({'success': False, 'error': 'Failed to parse response'}, status=500)
+            # Catch any JSON decoding errors
+            return JsonResponse({'error': 'Failed to parse response'}, status=500)
         except Exception as e:
-            return JsonResponse({'success': False, 'error': 'An unexpected error occurred: ' + str(e)}, status=500)
-
-    else:
-        return JsonResponse({'error': 'Invalid request method'}, status=405)
-    
-    
-
-def get_nft_transactions(request):
-    if request.method == 'POST':
-        user_ip = get_client_ip(request)
-        user_key = f"rate_limit_{user_ip}_get_nft_transactions"
-        if is_rate_limited(user_key):
-            return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
-
-        response = json.loads(request.body.decode("utf-8"))
-        wallet_address = response.get("wallet_address")
-        blockchain = response.get("blockchain")
-        page_size = response.get("page_size", 10)
-        page_token = response.get("page_token")
-
-        if not wallet_address:
-            return JsonResponse({'success': False, 'error': 'wallet_address must be provided'}, status=400)
-
-        if blockchain not in ["ethereum", "bsc", "polygon"]:
-            return JsonResponse({'success': False, 'error': 'Unsupported blockchain'}, status=400)
-
-        try:
-            if blockchain == "ethereum":
-                api_url = f"https://api.tatum.io/v3/nft/transaction/ETH/{wallet_address}"
-            elif blockchain == "bsc":
-                api_url = f"https://api.tatum.io/v3/nft/transaction/BSC/{wallet_address}"
-            elif blockchain == "polygon":
-                api_url = f"https://api.tatum.io/v3/nft/transaction/POLYGON/{wallet_address}"
-
-            params = {
-                "pageSize": page_size,
-            }
-            if page_token:
-                params["offset"] = page_token
-
-            headers = {
-                "x-api-key": "t-6677f6476c8488001c9beb60-eeb7b8b6b03749d19cd21df2",
-                "Content-Type": "application/json"
-            }
-
-            # Log the URL and params for debugging
-            logging.info(f"API URL: {api_url}")
-            logging.info(f"Params: {params}")
-            logging.info(f"Headers: {headers}")
-
-            response = requests.get(api_url, headers=headers, params=params)
-            response.raise_for_status()
-            ans = response.json()
-
-            data = {
-                "success": True,
-                "wallet_address": wallet_address,
-                "nft_transactions": ans
-            }
-
-            return JsonResponse(data, json_dumps_params={'ensure_ascii': False})
-
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Request exception: {e}")
-            return JsonResponse({'success': False, 'error': str(e)}, status=500)
-        except json.JSONDecodeError as e:
-            logging.error(f"JSON decode error: {e}")
-            return JsonResponse({'success': False, 'error': 'Failed to parse response'}, status=500)
-        except Exception as e:
-            logging.error(f"Unexpected error: {e}")
-            return JsonResponse({'success': False, 'error': 'An unexpected error occurred: ' + str(e)}, status=500)
-
+            # Catch any other exceptions
+            return JsonResponse({'error': 'An unexpected error occurred: ' + str(e)}, status=500)
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
