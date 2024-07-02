@@ -1,14 +1,12 @@
 # WalletListenerApp/views.py
 
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import JsonResponse
 import requests
 import json
-import os
 from osschain import env
 from django.http import JsonResponse
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-import time
 
 
 
@@ -58,28 +56,23 @@ def subscribe_to_wallet(request):
     
 transactions = []    
     
-
-def event_stream():
-    last_seen = 0
-    while True:
-        if len(transactions) > last_seen:
-            for transaction in transactions[last_seen:]:
-                # Filter transactions based on some criteria if needed
-                yield f"data: {json.dumps(transaction)}\n\n"
-            last_seen = len(transactions)
-        time.sleep(1)
-
-
-def sse_view(request):
+def get_last_transactions(request):
+    global transactions
     if request.method == 'GET':
         try:
-            response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
-            response['Cache-Control'] = 'no-cache'
-            return response
+            # Create a copy of the transactions to return
+            response_data = {'transactions': transactions.copy()}
+            
+            # Clear the transactions array
+            transactions.clear()
+
+            return JsonResponse(response_data)
         except Exception as e:
+            # Handle any exceptions that occur
             return JsonResponse({'error': str(e)}, status=500)
     else:
-        return JsonResponse({'error': 'Only GET method allowed'}, status=405)
+        # Return an error if the request method is not GET
+        return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 
 def tatum_webhook(request):
