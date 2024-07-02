@@ -13,22 +13,22 @@ from asgiref.sync import async_to_sync
 
 def subscribe_to_wallet(request):
     if request.method == 'POST':
-        data = json.loads(request.body)  # Assuming you send wallet_address as POST data
+        data = json.loads(request.body)  
         wallet_address = data.get('wallet_address')
         blockchain = data.get('blockchain')
 
         if not wallet_address:
             return JsonResponse({'error': 'Wallet address is required'}, status=400)
 
-        webhook_url = 'https://hidden-slice-426318-j1.ey.r.appspot.com/tatum_webhook'  # Replace with your actual webhook URL
+          
 
-        # Adjust chain based on your requirement, e.g., subscribing to all chains
+        
         payload = {
             "type": "ADDRESS_EVENT",
             "attr": {
-                "chain": blockchain,  # Adjust based on the chain you want to subscribe to
+                "chain": blockchain,  
                 "address": wallet_address,
-                "url": webhook_url
+                "url": env.tatum_webhook_url
             }
         }
 
@@ -52,6 +52,7 @@ def subscribe_to_wallet(request):
 
     else:
         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
+    
     
     
 transactions = []    
