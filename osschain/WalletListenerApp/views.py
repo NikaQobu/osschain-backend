@@ -59,20 +59,21 @@ transactions = []
     
 def get_last_transactions(request):
     global transactions
-    if request.method == 'GET':
+    if request.method == 'POST':
         try:
-            # Create a copy of the transactions to return
-            response_data = {'transactions': transactions.copy()}
-            
-            # Clear the transactions array
-            transactions.clear()
+            data = json.loads(request.body)
+            wallet_address = data.get('wallet_address')
 
-            return JsonResponse(response_data)
+            # Filter transactions to get only those with 'recipient' == wallet_address
+            filtered_transactions = [txn for txn in transactions if txn['recipient'] == wallet_address]
+
+            # Remove filtered transactions from the global transactions list
+            transactions = [txn for txn in transactions if txn['recipient'] != wallet_address]
+
+            return JsonResponse(filtered_transactions, safe=False)
         except Exception as e:
-            # Handle any exceptions that occur
             return JsonResponse({'error': str(e)}, status=500)
     else:
-        # Return an error if the request method is not GET
         return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 
