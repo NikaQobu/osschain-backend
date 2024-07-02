@@ -9,9 +9,6 @@ from osschain import env
 from web3.middleware import geth_poa_middleware
 
 
-
-
-
 def retry_on_specific_error(func, retries=5, delay=1, specific_error_message=None):
     if specific_error_message is None:
         specific_error_message = "{'code': -32602, 'message': 'too many arguments, want at most 1'}"
