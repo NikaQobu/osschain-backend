@@ -125,8 +125,6 @@ def get_transaction_by_address(request):
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
     
-    
-    
 def get_nft_transactions_by_owner(request):
     if request.method == 'POST':
         user_ip = get_client_ip(request)
