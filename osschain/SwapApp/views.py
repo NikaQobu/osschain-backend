@@ -1,72 +1,96 @@
 import json
-import logging
 import requests
 from django.http import JsonResponse
-from web3 import Web3
-from osschain.client_rescrict import is_rate_limited, get_client_ip
-from osschain import env
+from django.views.decorators.csrf import csrf_exempt
 
-# Constants for de.fi API
-DEFI_API_URL = "https://api.de.fi/swap"
-DEFI_API_KEY = "your_api_key_here"  # Replace with your actual API key
+# Define the initial LI.FI API key URL and initial API key
+INITIAL_API_KEY_URL = "https://li.quest/v1/keys/update"
+INITIAL_API_KEY = "afd7a237-c1d6-4696-aa0f-9c02f8950930.ceecaad0-c7c8-49a1-8e8b-8fd89215c14b"
 
+# Define the LI.FI API URL for swaps
+LI_FI_API_URL = "https://li.quest/v1/quote"
 
+# Placeholder for the new API key
+NEW_API_KEY = None
+
+def update_api_key():
+    global NEW_API_KEY
+    payload = {"name": "osschain"}
+    headers = {
+        "Content-Type": "application/json",
+        "x-lifi-api-key": INITIAL_API_KEY,
+    }
+
+    response = requests.post(INITIAL_API_KEY_URL, json=payload, headers=headers)
+
+    if response.status_code == 200:
+        response_data = response.json()
+        NEW_API_KEY = response_data.get("apiKey")
+    else:
+        raise Exception(f"Failed to update API key: {response.text}")
+
+@csrf_exempt
 def swap_tokens(request):
-    if request.method == 'POST':
-        user_ip = get_client_ip(request)
-        user_key = f"rate_limit_{user_ip}_swap_tokens"
-        if is_rate_limited(user_key):
-            return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
+    global NEW_API_KEY
+    if request.method == "POST":
+        if NEW_API_KEY is None:
+            try:
+                update_api_key()
+            except Exception as e:
+                return JsonResponse({"error": str(e)}, status=500)
+
         try:
-            data = json.loads(request.body.decode("utf-8"))
-            wallet_address = data.get("wallet_address")
+            data = json.loads(request.body)
             from_token = data.get("from_token")
             to_token = data.get("to_token")
             amount = data.get("amount")
-            blockchain = data.get("blockchain")
+            user_address = data.get("user_address")
+            from_chain = data.get("from_chain")
+            to_chain = data.get("to_chain")
 
-            if not all([wallet_address, from_token, to_token, amount, blockchain]):
-                return JsonResponse({'success': False, 'error': 'Missing required fields'}, status=400)
+            if not all([from_token, to_token, amount, user_address, from_chain, to_chain]):
+                return JsonResponse({"error": "Missing required fields"}, status=400)
 
-            # Convert addresses to checksum format
-            wallet_address = Web3.to_checksum_address(wallet_address)
-
-            # Define RPC URLs for supported blockchains
-            rpc_url = env.get_blockchain_rpc_node(blockchain)
-            if not rpc_url:
-                return JsonResponse({'success': False, 'error': 'Unsupported blockchain'}, status=400)
-
-            # Prepare the swap request payload
             payload = {
-                "wallet_address": wallet_address,
-                "from_token": from_token,
-                "to_token": to_token,
+                "fromChain": from_chain,
+                "toChain": to_chain,
+                "fromToken": from_token,
+                "toToken": to_token,
+                "fromAddress": user_address,
+                "toAddress": user_address,
                 "amount": amount,
-                "blockchain": blockchain
+                "slippage": 0.03,  # Example slippage
+                "integrator": "osschain",  # Include the integrator string
             }
 
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {DEFI_API_KEY}"
+                "x-api-key": NEW_API_KEY,  # Use the new API key
             }
 
-            # Perform the API call to execute the swap
-            response = requests.post(DEFI_API_URL, headers=headers, json=payload)
+            response = requests.post(LI_FI_API_URL, json=payload, headers=headers)
+
+            # Debug: Print the status code and response text
+            print(f"Response status code: {response.status_code}")
+            print(f"Response content: {response.text}")
+
+            try:
+                response_data = response.json()
+            except json.JSONDecodeError:
+                return JsonResponse({"error": "Invalid response from LI.FI API"}, status=500)
 
             if response.status_code == 200:
-                response_data = response.json()
-                return JsonResponse({
-                    'success': True,
-                    'message': 'Token swap completed successfully',
-                    'swap_info': response_data,
-                    'status': 200
-                })
+                return JsonResponse(response_data)
             else:
-                logging.error(f"Error in swap_tokens: {response.status_code} {response.text}")
-                return JsonResponse({'error': 'Error performing token swap'}, status=response.status_code)
-
-        except Exception as e:
-            logging.error(f"Error in swap_tokens: {str(e)}")
-            return JsonResponse({'error': 'An unexpected error occurred: ' + str(e)}, status=500)
+                return JsonResponse(response_data, status=response.status_code)
+        except json.JSONDecodeError as e:
+            # Debug: Print the JSON decode error
+            print(f"JSON decode error: {e}")
+            return JsonResponse({"error": "Invalid JSON payload"}, status=400)
+        except requests.RequestException as e:
+            return JsonResponse({"error": str(e)}, status=500)
     else:
-        return JsonResponse({'error': 'Invalid request method'}, status=405)
+        return JsonResponse({"error": "Invalid request method"}, status=405)
+
+# Assuming you are running this in a Django environment,
+# you would need to map these views to URLs in your urls.py file for actual deployment.

@@ -23,11 +23,12 @@ def get_token_transfer(request):
                 "id": id,
                 "jsonrpc": "2.0",
                 "method": "ankr_getTokenTransfers",
-                "pageSize": page_size,
+                
                 "params": {
                     "blockchain": blockchain,  # Add the relevant blockchain names, e.g., ["ethereum", "bsc"]
                     "address": wallet_address,
-                    "pageToken": page_token
+                    "pageToken": page_token,
+                    "pageSize": page_size,
                 }
             }
 
@@ -143,11 +144,11 @@ def get_nft_transactions_by_owner(request):
                 "id": id,
                 "jsonrpc": "2.0",
                 "method": "ankr_getNFTsByOwner",  # Adjust method name for NFTs by owner
-                "pageSize": page_size,
                 "params": {
                     "blockchain": blockchain,
                     "walletAddress": wallet_address,
-                    "pageToken": page_token
+                    "pageToken": page_token,
+                    "pageSize": page_size,
                     # Add any additional parameters specific to NFTs by owner
                 }
             }
