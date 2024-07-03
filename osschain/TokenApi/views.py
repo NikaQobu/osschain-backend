@@ -105,7 +105,6 @@ def get_account_balance(request):
         return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 
-
 def get_erc20_token_info(web3, token_contract_address):
     try:
         logging.info(f"Fetching token info for contract address: {token_contract_address}")
