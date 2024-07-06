@@ -19,9 +19,6 @@ def subscribe_to_wallet(request):
 
         if not wallet_address:
             return JsonResponse({'error': 'Wallet address is required'}, status=400)
-
-          
-
         
         payload = {
             "type": "ADDRESS_EVENT",
@@ -83,15 +80,29 @@ def tatum_webhook(request):
             data = json.loads(request.body)
 
             # Check subscriptionType
-            if 'subscriptionType' in data and data['subscriptionType'] == 'ADDRESS_EVENT':
+            if 'subscriptionType' in data:
+                currency = data.get('currency')
+                blockchain = data.get('chain')
                 tx_hash = data.get('txId')
+                blockNumber = data.get('blockNumber')
+                subscription_type = data.get('subscriptionType')
+                mempool =data.get('mempool')
+                counter_address =  data.get('counterAddress')
                 amount = data.get('amount')
                 sender = data.get('counterAddress')
                 recipient = data.get('address')
+                
+                
 
                 # Store transaction data
                 transaction = {
+                    "currency": currency,
+                    "blockchain": blockchain,
+                    "blockNumber": blockNumber,
+                    "subscription_type": subscription_type,
                     'tx_hash': tx_hash,
+                    "mempool": mempool,
+                    "counter_address": counter_address,
                     'amount': amount,
                     'sender': sender,
                     'recipient': recipient
