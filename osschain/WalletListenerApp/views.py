@@ -60,12 +60,21 @@ def get_last_transactions(request):
         try:
             data = json.loads(request.body)
             wallet_address = data.get('wallet_address')
+            filtered_transactions = []
 
-            # Filter transactions to get only those with 'recipient' == wallet_address
-            filtered_transactions = [txn for txn in transactions if txn['recipient'] == wallet_address]
+            # Iterate over transactions to set the flags and collect filtered transactions
+            for info in transactions:
+                if info['data'].get('counterAddress') == wallet_address:
+                    info["reciver"] = True
+                if info['data'].get('address') == wallet_address:
+                    info['sender'] = True
 
-            # Remove filtered transactions from the global transactions list
-            transactions = [txn for txn in transactions if txn['recipient'] != wallet_address]
+                # Collect transactions involving the wallet address
+                if info["reciver"] or info["sender"]:
+                    filtered_transactions.append(info['data'])
+
+            # Remove transactions where both reciver and sender are true
+            transactions = [info for info in transactions if info["reciver"] == False or info["sender"] == False]
 
             return JsonResponse(filtered_transactions, safe=False)
         except Exception as e:
@@ -79,41 +88,15 @@ def tatum_webhook(request):
         try:
             data = json.loads(request.body)
 
-            # Check subscriptionType
-            if 'subscriptionType' in data:
-                currency = data.get('currency')
-                blockchain = data.get('chain')
-                tx_hash = data.get('txId')
-                blockNumber = data.get('blockNumber')
-                subscription_type = data.get('subscriptionType')
-                mempool =data.get('mempool')
-                counter_address =  data.get('counterAddress')
-                amount = data.get('amount')
-                sender = data.get('counterAddress')
-                recipient = data.get('address')
-                
-                
+            transaction = {
+               "data": data,
+               "sender": False,
+               "reciver": False
+            }
+            transactions.append(transaction)
 
-                # Store transaction data
-                transaction = {
-                    "currency": currency,
-                    "blockchain": blockchain,
-                    "blockNumber": blockNumber,
-                    "subscription_type": subscription_type,
-                    'tx_hash': tx_hash,
-                    "mempool": mempool,
-                    "counter_address": counter_address,
-                    'amount': amount,
-                    'sender': sender,
-                    'recipient': recipient
-                }
-                transactions.append(transaction)
-
-                # Respond with success message
-                return JsonResponse({'message': 'Transaction data received successfully'}, status=200)
-
-            else:
-                return JsonResponse({'error': 'Invalid subscriptionType or missing in request'}, status=400)
+            # Respond with success message
+            return JsonResponse({'message': 'Transaction data received successfully'}, status=200)
 
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON format'}, status=400)
