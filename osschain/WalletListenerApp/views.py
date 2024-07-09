@@ -57,24 +57,26 @@ def get_last_transactions(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            wallet_address = data.get('wallet_address')
-            filtered_transactions = []
+            wallet_address = data.get('wallet_address').lower()
+            
+            if len(transactions) > 0:
+                
+                filtered_transactions = []
 
-            # Iterate over transactions to set the flags and collect filtered transactions
-            for info in transactions:
-                if info['data'].get('counterAddress') == wallet_address:
-                    info["reciver"] = True
-                    filtered_transactions.append(info['data'])
-                if info['data'].get('address') == wallet_address:
-                    info['sender'] = True
-                    filtered_transactions.append(info['data'])
+                for info in transactions:
+                    if info['counter_address'] == wallet_address:
+                        info["reciver"] = True
+                        filtered_transactions.append(info)
+                    elif info['address'] == wallet_address:
+                        info['sender'] = True
+                        filtered_transactions.append(info)
 
+                
+                transactions = [info for info in transactions if not (info["reciver"] and info["sender"])]
 
-
-            # Remove transactions where both reciver and sender are true
-            transactions = [info for info in transactions if info["reciver"] == False or info["sender"] == False]
-
-            return JsonResponse(filtered_transactions, safe=False)
+                return JsonResponse(filtered_transactions, safe=False)
+            else:
+                return JsonResponse({"message": "no transactions found"}, safe=False)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
     else:
@@ -84,12 +86,17 @@ def tatum_webhook(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
+            counter_address = data.get('counterAddress')
+            address = data.get('address')
 
             transaction = {
                "data": data,
                "sender": False,
-               "reciver": False
+               "reciver": False,
+               "counter_address": counter_address.lower(),
+               "address": address.lower()
             }
+            
             transactions.append(transaction)
 
             # Respond with success message
