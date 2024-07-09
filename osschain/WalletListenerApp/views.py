@@ -50,10 +50,8 @@ def subscribe_to_wallet(request):
     else:
         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
     
-    
-    
 transactions = []    
-    
+ 
 def get_last_transactions(request):
     global transactions
     if request.method == 'POST':
@@ -66,12 +64,12 @@ def get_last_transactions(request):
             for info in transactions:
                 if info['data'].get('counterAddress') == wallet_address:
                     info["reciver"] = True
+                    filtered_transactions.append(info['data'])
                 if info['data'].get('address') == wallet_address:
                     info['sender'] = True
-
-                # Collect transactions involving the wallet address
-                if info["reciver"] or info["sender"]:
                     filtered_transactions.append(info['data'])
+
+
 
             # Remove transactions where both reciver and sender are true
             transactions = [info for info in transactions if info["reciver"] == False or info["sender"] == False]
@@ -81,7 +79,6 @@ def get_last_transactions(request):
             return JsonResponse({'error': str(e)}, status=500)
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
-
 
 def tatum_webhook(request):
     if request.method == 'POST':
