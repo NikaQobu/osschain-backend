@@ -8,6 +8,7 @@ from django.http import JsonResponse
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from datetime import datetime, timedelta
+from .models import PushInfo
 
 
 
@@ -90,7 +91,6 @@ def get_last_transactions(request):
             return JsonResponse({'error': str(e)}, status=500)
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
-
 
 def normalize_chain(chain):
     # Normalize the chain value to match the Tatum API requirements
@@ -204,7 +204,6 @@ def normalize_chain(chain):
     }
     return chain_map.get(chain, chain)
 
-
 def is_valid_tx_id(tx_id):
     return isinstance(tx_id, str) and tx_id.startswith('0x') and len(tx_id) == 66
 
@@ -300,3 +299,26 @@ def tatum_webhook(request):
 
     else:
         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
+
+def get_push_info(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            wallet_address = data.get('wallet_address')
+            push_token = data.get('push_token')
+
+            # Validate the data (you can add more complex validation as needed)
+            if not wallet_address or not push_token:
+                return JsonResponse({'error': 'Wallet address and push token are required.'}, status=400)
+
+            # Save data to the database
+            push_info = PushInfo.objects.create(wallet_address=wallet_address, push_token=push_token)
+            push_info.save()
+
+            return JsonResponse({'message': 'Push info saved successfully.'}, status=201)
+
+        except json.JSONDecodeError as e:
+            return JsonResponse({'error': 'Invalid JSON format.'}, status=400)
+
+    return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
+    
