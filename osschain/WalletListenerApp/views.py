@@ -11,9 +11,6 @@ from datetime import datetime, timedelta
 
 
 
-
-
-
 def subscribe_to_wallet(request):
     if request.method == 'POST':
         data = json.loads(request.body)  
@@ -73,9 +70,9 @@ def get_last_transactions(request):
                     if current_time - transaction_time > timedelta(minutes=20):
                         transactions.remove(info)
                         
-                    elif info['reciver_address'] == wallet_address and info["reciver"] == False:
+                    if info['receiver_address'] == wallet_address and info["receiver"] == False:
                         filtered_transactions.append(info)
-                        info["reciver"] = True
+                        info["receiver"] = True
                             
                     elif info['sender_address'] == wallet_address and info['sender'] == False:
                         info['sender'] = True
@@ -84,7 +81,7 @@ def get_last_transactions(request):
                     
 
                 
-                transactions = [info for info in transactions if not (info["reciver"] and info["sender"])]
+                transactions = [info for info in transactions if not (info["receiver"] and info["sender"])]
 
                 return JsonResponse(filtered_transactions, safe=False)
             else:
@@ -93,8 +90,7 @@ def get_last_transactions(request):
             return JsonResponse({'error': str(e)}, status=500)
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
-    
-    
+
 
 def normalize_chain(chain):
     # Normalize the chain value to match the Tatum API requirements
@@ -208,10 +204,16 @@ def normalize_chain(chain):
     }
     return chain_map.get(chain, chain)
 
-    
+
 def is_valid_tx_id(tx_id):
-    # Check if the transaction ID is 66 characters long and starts with '0x'
     return isinstance(tx_id, str) and tx_id.startswith('0x') and len(tx_id) == 66
+
+def decode_erc20_transfer_input(input_data):
+    # ERC20 transfer method ID is "0xa9059cbb"
+    if input_data.startswith('0xa9059cbb'):
+        recipient_address = '0x' + input_data[34:74]
+        return recipient_address.lower()
+    return None
 
 def get_transaction_details(tx_id, blockchain='polygon'):
     if not is_valid_tx_id(tx_id):
@@ -220,38 +222,37 @@ def get_transaction_details(tx_id, blockchain='polygon'):
 
     TATUM_API_URL = f"https://api.tatum.io/v3/{blockchain}/transaction/{tx_id}"
     headers = {
-        'x-api-key': env.tatum_api_key
+        'x-api-key': env.tatum_api_key  # Replace with your actual Tatum API key
     }
     
     response = requests.get(TATUM_API_URL, headers=headers)
     
-
-    
     if response.status_code == 200:
-        return response.json()
+        transaction_details = response.json()
+
+        # Check if it's a token transfer
+        input_data = transaction_details.get('input')
+        if input_data:
+            receiver_address = decode_erc20_transfer_input(input_data)
+            if receiver_address:
+                return {
+                    "from": transaction_details.get('from', ''),
+                    "to": receiver_address
+                }
+        
+        # Handle regular transfer
+        sender_address = transaction_details.get('from')
+        receiver_address = transaction_details.get('to')
+        return {
+            "from": sender_address if sender_address else 'N/A',
+            "to": receiver_address if receiver_address else 'N/A'
+        }
     elif response.status_code == 403:
         print("Transaction not found. It might not exist or is still pending.")
         return None
     else:
         print(f"Error: {response.status_code} - {response.content}")
         return None
-        return None
-    
-def extract_receiver_from_logs(logs):
-    # ERC-1155 TransferSingle and TransferBatch event signatures
-    transfer_single_event_signature = '0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62'
-    transfer_batch_event_signature = '0x4a39dc06d4c0dbc64b70bca2e7c4c6fdefbbbc9b173f9d36a8c9f128ac9e8a1c'
-
-    for log in logs:
-        if log['topics'][0] == transfer_single_event_signature:
-            # For TransferSingle, the receiver is the last address in the topics array
-            if len(log['topics']) >= 4:
-                return '0x' + log['topics'][3][26:]  # Remove the leading zeros
-        elif log['topics'][0] == transfer_batch_event_signature:
-            # For TransferBatch, the receiver addresses are in the data field, need to handle separately if needed
-            # Assuming single transfer for simplicity
-            return '0x' + log['topics'][3][26:]  # This is usually the operator address, adjust as needed
-    return None
 
 def tatum_webhook(request):
     if request.method == 'POST':
@@ -267,36 +268,28 @@ def tatum_webhook(request):
             if transaction_details is None:
                 return JsonResponse({'error': 'Failed to fetch transaction details'}, status=500)
 
-            sender_address = transaction_details.get('from', '')
-            receiver_address = transaction_details.get('to', '')
-
-            # Extract actual receiver from logs if the to address is a contract
-            if transaction_details.get('to') and transaction_details['to'] == receiver_address:
-                receiver_address_from_logs = extract_receiver_from_logs(transaction_details.get('logs', []))
-                if receiver_address_from_logs:
-                    receiver_address = receiver_address_from_logs
-                    
-                    
+            sender_address = transaction_details.get('from', 'N/A')
+            receiver_address = transaction_details.get('to', 'N/A')
             
-
             transaction = {
-               "data": data,
-               "sender": False,
-               "reciver": False,
-               "sender_address": sender_address.lower(),
-               "reciver_address": receiver_address.lower(),
-               "time": datetime.utcnow().isoformat()
+                "data": data,
+                "sender": False,
+                "receiver": False,
+                "sender_address": sender_address.lower() if sender_address else 'n/a',
+                "receiver_address": receiver_address.lower() if receiver_address else 'n/a',
+                "time": datetime.utcnow().isoformat()
             }
             
+            # if data.get('address').lower() == transaction['receiver_address']:
+            #     transaction["receiver"] = True
+            # if data.get('address').lower() == transaction['sender_address']:
+            #     transaction["sender"] = True
             
             transactions.append(transaction)
             
-            #print(transaction)
-
-            # Respond with success message
-            
             return JsonResponse({
                 'message': 'Transaction data received successfully',
+                'transaction': transaction
             }, status=200)
 
         except json.JSONDecodeError:
