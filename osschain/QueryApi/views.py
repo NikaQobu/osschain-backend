@@ -29,6 +29,7 @@ def get_token_transfer(request):
                     "address": wallet_address,
                     "pageToken": page_token,
                     "pageSize": page_size,
+                    "descOrder": True
                 }
             }
 
@@ -89,6 +90,7 @@ def get_transaction_by_address(request):
                     "address": wallet_address,
                     "pageToken": page_token,
                     "pageSize": page_size,
+                    "descOrder": True
                 }
             }
             
@@ -149,6 +151,7 @@ def get_nft_transactions_by_owner(request):
                     "walletAddress": wallet_address,
                     "pageToken": page_token,
                     "pageSize": page_size,
+                    "descOrder": True
                     # Add any additional parameters specific to NFTs by owner
                 }
             }

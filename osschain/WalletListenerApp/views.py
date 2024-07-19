@@ -9,6 +9,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from datetime import datetime, timedelta
 from .models import PushInfo
+from django.shortcuts import render
 
 
 
@@ -253,6 +254,54 @@ def get_transaction_details(tx_id, blockchain='polygon'):
         print(f"Error: {response.status_code} - {response.content}")
         return None
 
+
+
+def send_push_notification(wallet_address):
+    all_push_infos = PushInfo.objects.all()
+    for push_info in all_push_infos:
+        print(f'Wallet Address: {push_info.wallet_address}, Push Token: {push_info.push_token}')
+    try:
+        # Print data for the specific wallet address
+        push_info = PushInfo.objects.get(wallet_address=wallet_address)
+        
+        
+        
+        # Fetch the push token
+        push_token = push_info.push_token
+        
+        # Expo push notification endpoint
+        url = 'https://exp.host/--/api/v2/push/send'
+        
+        # Payload for the push notification
+        payload = {
+            'to': push_token,
+            'title': 'Notification Title',
+            'body': 'Notification Body',
+            'data': {'wallet_address': wallet_address}
+        }
+    
+        
+        # Headers for the push notification request
+        headers = {
+            "host": "exp.host",
+            "accept": "application/json",
+            "accept-encoding": "gzip, deflate",
+            "content-type": "application/json",
+        }
+        
+        
+        # Send the push notification
+        response = requests.post(url, json=payload, headers=headers)
+        
+        if response.status_code == 200:
+            return JsonResponse({'message': 'Push notification sent successfully.'})
+        else:
+            return JsonResponse({'message': f'Failed to send push notification: {response.status_code} - {response.text}'}, status=response.status_code)
+    
+    except PushInfo.DoesNotExist:
+        return JsonResponse({'message': 'Wallet address not found in the database.'}, status=404)
+    
+
 def tatum_webhook(request):
     if request.method == 'POST':
         try:
@@ -267,15 +316,15 @@ def tatum_webhook(request):
             if transaction_details is None:
                 return JsonResponse({'error': 'Failed to fetch transaction details'}, status=500)
 
-            sender_address = transaction_details.get('from', 'N/A')
-            receiver_address = transaction_details.get('to', 'N/A')
+            sender_address = transaction_details.get('from', 'N/A').lower()
+            receiver_address = transaction_details.get('to', 'N/A').lower()
             
             transaction = {
                 "data": data,
                 "sender": False,
                 "receiver": False,
-                "sender_address": sender_address.lower() if sender_address else 'n/a',
-                "receiver_address": receiver_address.lower() if receiver_address else 'n/a',
+                "sender_address": sender_address if sender_address else 'n/a',
+                "receiver_address": receiver_address if receiver_address else 'n/a',
                 "time": datetime.utcnow().isoformat()
             }
             
@@ -286,10 +335,16 @@ def tatum_webhook(request):
             
             transactions.append(transaction)
             
+            send_push_notification(sender_address)
+            send_push_notification(receiver_address)
+            
             return JsonResponse({
                 'message': 'Transaction data received successfully',
                 'transaction': transaction
             }, status=200)
+            
+            
+            
 
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON format'}, status=400)
@@ -300,24 +355,29 @@ def tatum_webhook(request):
     else:
         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
 
-def get_push_info(request):
+def save_push_info(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            wallet_address = data.get('wallet_address')
+            wallet_address = data.get('wallet_address').lower()
             push_token = data.get('push_token')
 
-            # Validate the data (you can add more complex validation as needed)
+            # Validate the data
             if not wallet_address or not push_token:
                 return JsonResponse({'error': 'Wallet address and push token are required.'}, status=400)
 
-            # Save data to the database
-            push_info = PushInfo.objects.create(wallet_address=wallet_address, push_token=push_token)
-            push_info.save()
+            try:
+                # Check if a PushInfo entry with the wallet_address already exists
+                PushInfo.objects.get(wallet_address=wallet_address)
+                return JsonResponse({'message': 'This info already exists.'}, status=409)  # 409 Conflict
 
-            return JsonResponse({'message': 'Push info saved successfully.'}, status=201)
+            except PushInfo.DoesNotExist:
+                # Create a new PushInfo entry
+                push_info = PushInfo.objects.create(wallet_address=wallet_address, push_token=push_token)
+                push_info.save()
+                return JsonResponse({'message': 'Push info saved successfully.'}, status=201)  # 201 Created
 
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON format.'}, status=400)
 
     return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
