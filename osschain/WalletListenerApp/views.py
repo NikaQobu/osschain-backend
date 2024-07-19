@@ -7,9 +7,12 @@ from osschain import env
 from django.http import JsonResponse
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from django.utils import timezone
 from datetime import datetime, timedelta
-from .models import PushInfo
+from .models import PushInfo, Transactions
 from django.shortcuts import render
+from django.db.models import Q
+from django.db import transaction as db_transaction
 
 
 
@@ -52,42 +55,54 @@ def subscribe_to_wallet(request):
     else:
         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
     
-transactions = []    
+   
  
 def get_last_transactions(request):
-    global transactions
     if request.method == 'POST':
         try:
+            # Load and process JSON data from the request body
             data = json.loads(request.body)
-            wallet_address = data.get('wallet_address').lower()
-            
-            if len(transactions) > 0:
+            wallet_address = data.get('wallet_address', '').lower()
+
+            # Retrieve all transactions from the database
+            transactions = Transactions.objects.filter(
+                Q(receiver_address=wallet_address) | Q(sender_address=wallet_address)
+            )
+
+            # Collect updates and deletions
+            update_list = []
+            delete_list = []
+
+            for transaction in transactions:
+                if transaction.receiver_address == wallet_address and not transaction.receiver:
+                    transaction.receiver = True
+                    update_list.append(transaction)
                 
-                filtered_transactions = []
-                current_time = datetime.utcnow()
-
-                for info in transactions:
-                    transaction_time = datetime.fromisoformat(info["time"])
-
-                    if current_time - transaction_time > timedelta(minutes=20):
-                        transactions.remove(info)
-                        
-                    if info['receiver_address'] == wallet_address and info["receiver"] == False:
-                        filtered_transactions.append(info)
-                        info["receiver"] = True
-                            
-                    elif info['sender_address'] == wallet_address and info['sender'] == False:
-                        info['sender'] = True
-                        filtered_transactions.append(info)
-                    
-                    
-
+                elif transaction.sender_address == wallet_address and not transaction.sender:
+                    transaction.sender = True
+                    update_list.append(transaction)
                 
-                transactions = [info for info in transactions if not (info["receiver"] and info["sender"])]
+                elif transaction.receiver and transaction.sender:
+                    delete_list.append(transaction)
 
-                return JsonResponse(filtered_transactions, safe=False)
-            else:
-                return JsonResponse({"message": "no transactions found"}, safe=False)
+            # Perform bulk update
+            if update_list:
+                with db_transaction.atomic():
+                    for tx in update_list:
+                        tx.save()
+
+            # Perform bulk delete
+            if delete_list:
+                with db_transaction.atomic():
+                    Transactions.objects.filter(id__in=[tx.id for tx in delete_list]).delete()
+
+            # Serialize the transactions for response
+            transactions_data = list(transactions.values())
+
+            return JsonResponse(transactions_data, safe=False)
+        
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON format'}, status=400)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
     else:
@@ -255,11 +270,10 @@ def get_transaction_details(tx_id, blockchain='polygon'):
         return None
 
 
-
 def send_push_notification(wallet_address):
-    all_push_infos = PushInfo.objects.all()
-    for push_info in all_push_infos:
-        print(f'Wallet Address: {push_info.wallet_address}, Push Token: {push_info.push_token}')
+    #all_push_infos = PushInfo.objects.all()
+    # for push_info in all_push_infos:
+    #     print(f'Wallet Address: {push_info.wallet_address}, Push Token: {push_info.push_token}')
     try:
         # Print data for the specific wallet address
         push_info = PushInfo.objects.get(wallet_address=wallet_address)
@@ -300,8 +314,8 @@ def send_push_notification(wallet_address):
     
     except PushInfo.DoesNotExist:
         return JsonResponse({'message': 'Wallet address not found in the database.'}, status=404)
+ 
     
-
 def tatum_webhook(request):
     if request.method == 'POST':
         try:
@@ -319,28 +333,33 @@ def tatum_webhook(request):
             sender_address = transaction_details.get('from', 'N/A').lower()
             receiver_address = transaction_details.get('to', 'N/A').lower()
             
-            transaction = {
-                "data": data,
-                "sender": False,
-                "receiver": False,
-                "sender_address": sender_address if sender_address else 'n/a',
-                "receiver_address": receiver_address if receiver_address else 'n/a',
-                "time": datetime.utcnow().isoformat()
-            }
+            new_transaction = Transactions.objects.create(
+                data=data,
+                sender=False,
+                receiver=False,
+                sender_address=sender_address if sender_address else 'n/a',
+                receiver_address=receiver_address if receiver_address else 'n/a',
+            )
+            
+            
+            
+            
+            
+                
+            
             
             # if data.get('address').lower() == transaction['receiver_address']:
             #     transaction["receiver"] = True
             # if data.get('address').lower() == transaction['sender_address']:
             #     transaction["sender"] = True
             
-            transactions.append(transaction)
+            #transactions.append(transaction)
             
             send_push_notification(sender_address)
             send_push_notification(receiver_address)
             
             return JsonResponse({
                 'message': 'Transaction data received successfully',
-                'transaction': transaction
             }, status=200)
             
             
