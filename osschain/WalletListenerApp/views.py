@@ -270,7 +270,8 @@ def get_transaction_details(tx_id, blockchain='polygon'):
         return None
 
 
-def send_push_notification(wallet_address):
+def send_push_notification(wallet_address, new_transaction):
+    
     #all_push_infos = PushInfo.objects.all()
     # for push_info in all_push_infos:
     #     print(f'Wallet Address: {push_info.wallet_address}, Push Token: {push_info.push_token}')
@@ -283,15 +284,29 @@ def send_push_notification(wallet_address):
         # Fetch the push token
         push_token = push_info.push_token
         
+      
+        title = ""
+        body = ""
+        
+        
+        type_token = new_transaction.data["type"]
+        if new_transaction.receiver_address:
+            title = "Transaction recieved"
+            body = f"Recived: {type_token}"
+        elif new_transaction.sender_address:
+            title = "Transaction sent"
+            body = f"Sent: {type_token}"
+        
+        
+        
         # Expo push notification endpoint
         url = 'https://exp.host/--/api/v2/push/send'
         
         # Payload for the push notification
         payload = {
             'to': push_token,
-            'title': 'Notification Title',
-            'body': 'Notification Body',
-            'data': {'wallet_address': wallet_address}
+            'title': title,
+            'body': body,
         }
     
         
@@ -342,21 +357,8 @@ def tatum_webhook(request):
             )
             
             
-            
-            
-            
-                
-            
-            
-            # if data.get('address').lower() == transaction['receiver_address']:
-            #     transaction["receiver"] = True
-            # if data.get('address').lower() == transaction['sender_address']:
-            #     transaction["sender"] = True
-            
-            #transactions.append(transaction)
-            
-            send_push_notification(sender_address)
-            send_push_notification(receiver_address)
+            send_push_notification(sender_address, new_transaction)
+            send_push_notification(receiver_address, new_transaction)
             
             return JsonResponse({
                 'message': 'Transaction data received successfully',

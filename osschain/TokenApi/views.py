@@ -50,9 +50,7 @@ def get_account_balance(request):
             token_contract_address = data.get("token_contract_address", None)
             token_symbol = data.get("token_symbol")
             
-           
             
-
             if not all([wallet_address, blockchain]):
                 return JsonResponse({'success': False, 'error': 'Missing required fields'}, status=400)
 
