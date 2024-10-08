@@ -40,64 +40,56 @@ def get_crypto_price(token_symbol):
 def get_account_balance(request):
     if request.method == 'POST':
         user_ip = get_client_ip(request)
-        user_key = f"rate_limit_{user_ip}_get_account_balance"
+        user_key = f"rate_limit_{user_ip}_calculate_chain_gas_price"
         if is_rate_limited(user_key):
             return JsonResponse({'success': False, 'error': 'Rate limit exceeded. Try again later.'}, status=429)
+        
+        response = json.loads(request.body.decode("utf-8"))
+        wallet_address = response.get("wallet_address")
+        blockchain = response.get("blockchain")
+        page_size = response.get("page_size")
+        id = response.get("id")
         try:
-            data = json.loads(request.body.decode("utf-8"))
-            wallet_address = data.get("wallet_address")
-            blockchain = data.get("blockchain")
-            token_contract_address = data.get("token_contract_address", None)
-            token_symbol = data.get("token_symbol")
+            payload = {
+                "id": id,
+                "jsonrpc": "2.0",
+                "method": "ankr_getAccountBalance",
+                "pageSize": page_size,
+                "params": {
+                    "blockchain": blockchain,  # Add the relevant blockchain names, e.g., ["ethereum", "bsc"]
+                    "walletAddress": wallet_address
+                }
+            }
+
+            response = requests.post(env.ankr_url, data=json.dumps(payload), headers=env.ankr_request_header)
+            response.raise_for_status()  # Raise an HTTPError for bad responses
             
-            
-            if not all([wallet_address, blockchain]):
-                return JsonResponse({'success': False, 'error': 'Missing required fields'}, status=400)
-
-            # Convert address to checksum format
-            wallet_address = Web3.to_checksum_address(wallet_address)
-
-            # Define RPC URLs for supported blockchains
-            rpc_url = env.get_blockchain_rpc_node(blockchain)
-            if not rpc_url:
-                return JsonResponse({'success': False, 'error': 'Unsupported blockchain'}, status=400)
-            
-            # Connect to the blockchain using the appropriate RPC URL
-            web3 = Web3(Web3.HTTPProvider(rpc_url))
-
-            if not web3.is_connected():
-                return JsonResponse({'success': False, 'error': 'Failed to connect to blockchain node'}, status=500)
-
-            if token_contract_address:
-                # Convert contract address to checksum format
-                token_contract_address = Web3.to_checksum_address(token_contract_address)
-                # Fetch token balance
-                try:
-                    token_balance = get_erc20_balance(web3, wallet_address, token_contract_address)
-                    return JsonResponse({
-                        'success': True,
-                        'message': 'Request completed successfully',
-                        'token_balance': str(token_balance),
-                        "native_price": get_crypto_price(token_symbol),
-                        'status': 200
-                    })
-                except Exception as token_error:
-                    logging.error(f"Error fetching token balance for {token_contract_address}: {str(token_error)}")
-                    return JsonResponse({'error': 'Error fetching token balance'}, status=500)
+            # Check the API response JSON for specific data or conditions
+            ans = response.json()
+            if ans.get('success', True):
+                data = {
+                    "success": True,
+                    "message": "Request completed successfully",
+                    "ans": ans,
+                    "status": 200
+                }
             else:
-                # Fetch native currency balance
-                balance_wei = web3.eth.get_balance(wallet_address)
-                balance_native = web3.from_wei(balance_wei, 'ether')
-                return JsonResponse({
-                    'success': True,
-                    'message': 'Request completed successfully',
-                    'balance_native': str(balance_native),
-                    "native_price": get_crypto_price(token_symbol),
-                    'status': 200
-                })
+                data = {
+                    "success": False,
+                    "message": "Answer does not exist",
+                    "status": 404  # Example status code for resource not found
+                }
 
+            return JsonResponse(data, status=data.get("status"), json_dumps_params={'ensure_ascii': False})
+
+        except requests.exceptions.RequestException as e:
+            # Catch any request-related exceptions
+            return JsonResponse({'error': str(e)}, status=500)
+        except json.JSONDecodeError as e:
+            # Catch any JSON decoding errors
+            return JsonResponse({'error': 'Failed to parse response'}, status=500)
         except Exception as e:
-            logging.error(f"Error in get_account_balance: {str(e)}")
+            # Catch any other exceptions
             return JsonResponse({'error': 'An unexpected error occurred: ' + str(e)}, status=500)
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
