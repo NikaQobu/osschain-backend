@@ -42,6 +42,7 @@ testem.log
 Thumbs.db
 /venv
 osschain/osschain/
+osschain/
 
 
 
