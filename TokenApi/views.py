@@ -48,6 +48,7 @@ def get_account_balance(request):
         wallet_address = response.get("wallet_address")
         blockchain = response.get("blockchain")
         page_size = response.get("page_size")
+        only_white_listed = response.get("only_white_listed")
         id = response.get("id")
         try:
             payload = {
@@ -55,6 +56,7 @@ def get_account_balance(request):
                 "jsonrpc": "2.0",
                 "method": "ankr_getAccountBalance",
                 "pageSize": page_size,
+                "onlyWhitelisted": only_white_listed,
                 "params": {
                     "blockchain": blockchain,  # Add the relevant blockchain names, e.g., ["ethereum", "bsc"]
                     "walletAddress": wallet_address
@@ -93,7 +95,6 @@ def get_account_balance(request):
             return JsonResponse({'error': 'An unexpected error occurred: ' + str(e)}, status=500)
     else:
         return JsonResponse({'error': 'Invalid request method'}, status=405)
-
 
 def get_erc20_token_info(web3, token_contract_address):
     try:
