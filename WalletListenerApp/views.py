@@ -63,41 +63,19 @@ def get_last_transactions(request):
             wallet_address = data.get('wallet_address', '').lower()
 
             # Retrieve all transactions from the database
-            transactions = Transactions.objects.filter(
-                Q(receiver_address=wallet_address) | Q(sender_address=wallet_address)
-            )
-
-            # Collect updates and deletions
-            update_list = []
-            delete_list = []
-
-            for transaction in transactions:
-                if transaction.receiver_address == wallet_address and not transaction.receiver:
-                    transaction.receiver = True
-                    update_list.append(transaction)
-                
-                elif transaction.sender_address == wallet_address and not transaction.sender:
-                    transaction.sender = True
-                    update_list.append(transaction)
-                
-                elif transaction.receiver and transaction.sender:
-                    delete_list.append(transaction)
-
-            # Perform bulk update
-            if update_list:
-                with db_transaction.atomic():
-                    for tx in update_list:
-                        tx.save()
-
-            # Perform bulk delete
-            if delete_list:
-                with db_transaction.atomic():
-                    Transactions.objects.filter(id__in=[tx.id for tx in delete_list]).delete()
+            transactions = Transactions.objects.filter(receiver_address=wallet_address)
 
             # Serialize the transactions for response
             transactions_data = list(transactions.values())
+            
+            # Send the transaction data in the response
+            response = JsonResponse(transactions_data, safe=False)
 
-            return JsonResponse(transactions_data, safe=False)
+            # Delete the transactions from the database after sending the response
+            transactions.delete()
+
+            # Return the response (this sends the data before deletion)
+            return response
         
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON format'}, status=400)
