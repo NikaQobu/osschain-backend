@@ -56,10 +56,10 @@ def get_account_balance(request):
                 "jsonrpc": "2.0",
                 "method": "ankr_getAccountBalance",
                 "pageSize": page_size,
-                "onlyWhitelisted": only_white_listed,
                 "params": {
                     "blockchain": blockchain,  # Add the relevant blockchain names, e.g., ["ethereum", "bsc"]
-                    "walletAddress": wallet_address
+                    "walletAddress": wallet_address,
+                    "onlyWhitelisted": only_white_listed,
                 }
             }
 

@@ -55,8 +55,6 @@ def subscribe_to_wallet(request):
     else:
         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
     
-   
- 
 def get_last_transactions(request):
     if request.method == 'POST':
         try:

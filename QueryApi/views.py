@@ -84,7 +84,6 @@ def get_transaction_by_address(request):
                 "id": id,
                 "jsonrpc": "2.0",
                 "method": "ankr_getTransactionsByAddress",
-                
                 "params": {
                     "blockchain": blockchain,  # Add the relevant blockchain names, e.g., ["ethereum", "bsc"]
                     "address": wallet_address,
